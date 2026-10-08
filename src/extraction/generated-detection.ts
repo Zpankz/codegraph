@@ -249,7 +249,20 @@ export function hasGeneratedHeader(content: string): boolean {
  * indexer persists to `files.generated`.
  */
 export function detectGeneratedFile(filePath: string, content: string): boolean {
-  return isGeneratedFile(filePath) || hasGeneratedHeader(content) || isMinifiedContent(filePath, content);
+  const header = MARKDOWN_PATH.test(filePath) ? markdownComments(content) : content;
+  return isGeneratedFile(filePath) || hasGeneratedHeader(header) || isMinifiedContent(filePath, content);
+}
+
+const MARKDOWN_PATH = /\.(?:md|mdx|markdown)$/i;
+
+/**
+ * A Markdown file's comments: only `<!-- … -->` is one. Its prose routinely
+ * QUOTES a generator banner, and `#` headings, `*` bullets and a `src/*.ts`
+ * glob read as comment syntax to the source-file scan.
+ */
+function markdownComments(content: string): string {
+  const head = content.length > HEADER_SCAN_CHARS ? content.slice(0, HEADER_SCAN_CHARS) : content;
+  return [...head.matchAll(/<!--[\s\S]*?-->/g)].map((m) => m[0]).join('\n');
 }
 
 /** Scripts a bundler or minifier writes as a few enormous lines. */
