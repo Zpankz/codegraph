@@ -27,6 +27,7 @@ import { rustImplTypeName } from './languages/rust';
 import { goAliasTypeNames, goEmbeddedTypeName } from './languages/go';
 import { dartMisparsedGenericCall, dartReceiverOf, isDartTypeName, pushDartTypeRefs } from './languages/dart';
 import { LiquidExtractor } from './liquid-extractor';
+import { MarkdownExtractor } from './markdown-extractor';
 import { RazorExtractor } from './razor-extractor';
 import { SvelteExtractor } from './svelte-extractor';
 import { AstroExtractor } from './astro-extractor';
@@ -8295,6 +8296,10 @@ export function extractFromSource(
   } else if (detectedLanguage === 'razor') {
     // Use custom extractor for ASP.NET Razor (.cshtml) / Blazor (.razor) markup
     const extractor = new RazorExtractor(filePath, source);
+    result = extractor.extract();
+  } else if (detectedLanguage === 'markdown') {
+    // Custom extractor for Markdown / MDX: sections, terms, links and code mentions
+    const extractor = new MarkdownExtractor(filePath, source);
     result = extractor.extract();
   } else if (detectedLanguage === 'xml') {
     // Custom extractor for MyBatis mapper XML. Non-mapper XML returns just a
