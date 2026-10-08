@@ -156,6 +156,9 @@ function matchSymbol(ref: UnresolvedRef, context: ResolutionContext): ResolvedRe
   }
 
   const primary = candidates.filter((n) => PRIMARY_KINDS.has(n.kind));
+  // A bare dictionary word (`references`, `protocol`) is far likelier prose
+  // than the one property that happens to share it.
+  if (primary.length === 0 && !qualified && /^[a-z]+$/.test(tail)) return null;
   let tier = primary.length > 0 ? primary : candidates;
   const nonTest = tier.filter((n) => !isTestPath(n.filePath));
   if (nonTest.length > 0) tier = nonTest;

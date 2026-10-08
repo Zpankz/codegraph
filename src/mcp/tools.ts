@@ -4268,6 +4268,19 @@ export class ToolHandler {
       minScore: 0.2,
     });
 
+    // Prose matches common English words, so documentation hits alone must not
+    // seed an answer: traversing their links would pull in code that no query
+    // word named.
+    const onlyDocumentationRoots = subgraph.roots.length > 0 && subgraph.roots.every((id) => {
+      const root = subgraph.nodes.get(id);
+      return !!root && DOCUMENTATION_LANGUAGES.has(root.language);
+    });
+    if (onlyDocumentationRoots) {
+      subgraph.nodes.clear();
+      subgraph.edges.length = 0;
+      subgraph.roots.length = 0;
+    }
+
     // Pinned files' symbols enter the gather unconditionally — the agent named
     // the file itself, so its contents ARE the answer regardless of what the
     // stripped query text matched (which, for a pure-path query, is nothing).
