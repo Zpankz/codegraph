@@ -35,6 +35,7 @@
 import type CodeGraph from '../index';
 import type { Node, Edge } from '../types';
 import { isTestFile } from '../search/query-utils';
+import { DOCUMENTATION_LANGUAGES } from '../utils';
 
 import { lastQualifierPart, matchesSymbol } from './symbol-lookup';
 
@@ -88,6 +89,12 @@ export function findAllSymbols(cg: CodeGraph, symbol: string): { nodes: Node[]; 
     exactNodes = results
       .filter((r) => matchesSymbol(r.node, symbol))
       .map((r) => r.node);
+  }
+
+  // A heading titled with a symbol's name documents that symbol; asked for
+  // the symbol, answer with its definition.
+  if (exactNodes.some((n) => !DOCUMENTATION_LANGUAGES.has(n.language))) {
+    exactNodes = exactNodes.filter((n) => !DOCUMENTATION_LANGUAGES.has(n.language));
   }
 
   if (exactNodes.length === 0) {

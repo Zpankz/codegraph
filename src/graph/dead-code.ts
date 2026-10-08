@@ -104,6 +104,8 @@ import path from 'path';
 import type CodeGraph from '../index';
 import type { EdgeKind, Node, NodeKind } from '../types';
 import { isTestFile } from '../search/query-utils';
+import { detectLanguage } from '../extraction/grammars';
+import { DOCUMENTATION_LANGUAGES } from '../utils';
 
 // =============================================================================
 // Caps and defaults
@@ -614,12 +616,15 @@ export function buildDeadCodeReport(cg: CodeGraph, query: DeadCodeQuery = {}): D
       return sources.get(file) ?? null;
     };
     // The set to search is the declaring file plus everything the index says
-    // reaches into it — the same set a call could have come from. Computed once
-    // per file, not once per candidate.
+    // reaches into it — the same set a call could have come from, so not the
+    // documents that describe it. Computed once per file, not once per candidate.
     const scopes = new Map<string, string[]>();
     for (const row of kept) {
       const file = row.node.filePath;
-      if (!scopes.has(file)) scopes.set(file, [file, ...cg.getFileDependents(file)]);
+      if (!scopes.has(file)) {
+        const dependents = cg.getFileDependents(file).filter((f) => !DOCUMENTATION_LANGUAGES.has(detectLanguage(f)));
+        scopes.set(file, [file, ...dependents]);
+      }
     }
 
     for (const row of kept) {

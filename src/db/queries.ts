@@ -2348,7 +2348,8 @@ export class QueryBuilder {
    * "Points at" is every edge kind EXCEPT `contains`: a class containing a
    * method is structure, not use, and counting it would make every member look
    * reached by its own container. A self-edge is excluded for the same reason
-   * a recursive function is not its own caller.
+   * a recursive function is not its own caller, and an edge from a Markdown
+   * document because describing a function does not call it.
    *
    * One scan, one index probe per candidate. `NOT EXISTS` over
    * `idx_edges_target_kind` is what keeps it that way — the alternative
@@ -2378,6 +2379,10 @@ export class QueryBuilder {
                    WHERE e.target = n.id
                      AND e.kind != 'contains'
                      AND e.source != n.id
+                     AND NOT EXISTS (
+                           SELECT 1 FROM nodes s
+                            WHERE s.id = e.source AND s.language = 'markdown'
+                         )
                 )
        ORDER BY n.file_path, n.start_line, n.name
           LIMIT ?`
@@ -2412,10 +2417,10 @@ export class QueryBuilder {
       const rows = this.db
         .prepare(
           `SELECT DISTINCT reference_name AS name FROM unresolved_refs
-            WHERE reference_name IN (${placeholders})
+            WHERE reference_name IN (${placeholders}) AND language != 'markdown'
             UNION
            SELECT DISTINCT name_tail AS name FROM unresolved_refs
-            WHERE name_tail IN (${placeholders})`
+            WHERE name_tail IN (${placeholders}) AND language != 'markdown'`
         )
         .all(...chunk, ...chunk) as Array<{ name: string }>;
       for (const row of rows) found.add(row.name);

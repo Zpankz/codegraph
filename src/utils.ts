@@ -53,6 +53,20 @@ const SENSITIVE_PATHS = new Set([
 export const CONFIG_LEAF_LANGUAGES: ReadonlySet<string> = new Set(['yaml', 'properties']);
 
 /**
+ * Languages whose files document code rather than being code. They are indexed
+ * and searchable, but a project's size — the explore budgets — is measured in
+ * code files, and a match in prose is weaker evidence than a match in source.
+ */
+export const DOCUMENTATION_LANGUAGES: ReadonlySet<string> = new Set(['markdown']);
+
+/** Indexed files that are code: `fileCount` minus documentation files. */
+export function codeFileCount(stats: { fileCount: number; filesByLanguage: Partial<Record<string, number>> }): number {
+  let docs = 0;
+  for (const language of DOCUMENTATION_LANGUAGES) docs += stats.filesByLanguage[language] ?? 0;
+  return Math.max(0, stats.fileCount - docs);
+}
+
+/**
  * A config-leaf node is a single key lifted out of a pure config/data file —
  * `kind: 'constant'` in a {@link CONFIG_LEAF_LANGUAGES} language. Its on-disk
  * line is `key = <value>`, and that value is routinely a secret (DB password,

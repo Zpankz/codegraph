@@ -49,7 +49,7 @@ import {
   statSync,
 } from 'fs';
 import { createHash } from 'crypto';
-import { clamp, validatePathWithinRoot, validateProjectPath, isConfigLeafNode, CONFIG_LEAF_LANGUAGES } from '../utils';
+import { clamp, validatePathWithinRoot, validateProjectPath, isConfigLeafNode, CONFIG_LEAF_LANGUAGES, DOCUMENTATION_LANGUAGES, codeFileCount } from '../utils';
 import { guardLabel, guardsForFileSync, siteKey, supportsBranchGuards, warmBranchGuardGrammars } from '../graph/branch-guards';
 import { findDynamicBoundaries, type BoundarySite } from '../graph/dynamic-boundary-report';
 import { countImplementers } from '../graph/type-hierarchy';
@@ -430,6 +430,14 @@ export const RELEVANCE_KIND_WEIGHT: Readonly<Record<string, number>> = {
   constant: 0.35, variable: 0.3, parameter: 0.15,
 };
 const DEFAULT_RELEVANCE_KIND_WEIGHT = 0.5;
+
+/**
+ * A match in documentation — a heading, a defined term — whatever its kind.
+ * Prose describes the code an architecture question is about, so it can carry
+ * a file when nothing in source matches, but it never outweighs source that
+ * does: a heading titled with the question's words is not where the answer is.
+ */
+const DOCUMENTATION_RELEVANCE_WEIGHT = 0.2;
 
 /**
  * The "member of a type" tier of the table above, named so the one kind that
@@ -2148,8 +2156,8 @@ export class ToolHandler {
     if (!this.cg) return withRequiredProjectPath(visible);
 
     try {
-      const stats = this.cg.getStats();
-      const budget = getExploreBudget(stats.fileCount);
+      const codeFiles = codeFileCount(this.cg.getStats());
+      const budget = getExploreBudget(codeFiles);
 
       // Tiny-repo tool gating: on projects under TINY_REPO_FILE_THRESHOLD
       // files, only expose the core trio (search, node, explore) — one
@@ -2180,7 +2188,7 @@ export class ToolHandler {
         'codegraph_search',
         'codegraph_node',
       ]);
-      if (stats.fileCount < TINY_REPO_FILE_THRESHOLD) {
+      if (codeFiles < TINY_REPO_FILE_THRESHOLD) {
         visible = visible.filter(t => TINY_REPO_CORE_TOOLS.has(t.name));
       }
 
@@ -2188,7 +2196,7 @@ export class ToolHandler {
         if (tool.name === 'codegraph_explore') {
           return {
             ...tool,
-            description: `${tool.description} Exploration guidance — advisory only, NOT a quota: ~${budget} focused calls usually cover this project (${stats.fileCount.toLocaleString()} files indexed), and extra calls are never rejected or rate-limited.`,
+            description: `${tool.description} Exploration guidance — advisory only, NOT a quota: ~${budget} focused calls usually cover this project (${codeFiles.toLocaleString()} files indexed), and extra calls are never rejected or rate-limited.`,
           };
         }
         return tool;
@@ -4128,7 +4136,7 @@ export class ToolHandler {
     let indexedNodeCount = -1;
     try {
       const stats = cg.getStats();
-      indexedFileCount = stats.fileCount;
+      indexedFileCount = codeFileCount(stats);
       indexedNodeCount = stats.nodeCount;
       budget = getExploreOutputBudget(indexedFileCount);
     } catch {
@@ -4679,6 +4687,7 @@ export class ToolHandler {
      * declares it.
      */
     const relevanceWeight = (node: Node, probeIsolation: boolean): number => {
+      if (DOCUMENTATION_LANGUAGES.has(node.language)) return DOCUMENTATION_RELEVANCE_WEIGHT;
       const signatureOnly = isInterfaceOwnedMethod(node);
       const weight = signatureOnly
         ? TYPE_MEMBER_RELEVANCE_WEIGHT
@@ -7480,9 +7489,9 @@ export class ToolHandler {
     let budgetBlock: string[] = [];
     if (budget.includeBudgetNote) {
       try {
-        const stats = cg.getStats();
-        const callBudget = getExploreBudget(stats.fileCount);
-        budgetBlock = ['', `> **Exploration guidance — advisory only, NOT a quota: this project (~${stats.fileCount.toLocaleString()} files indexed) is usually covered in ≈${callBudget} focused explore calls, and extra calls are never rejected or rate-limited.** If the response above does not fully cover your question, run another codegraph_explore on the uncovered symbols — it is cheaper and more complete than Read. Only stop exploring when the response actually covers the flow you asked about.`];
+        const codeFiles = codeFileCount(cg.getStats());
+        const callBudget = getExploreBudget(codeFiles);
+        budgetBlock = ['', `> **Exploration guidance — advisory only, NOT a quota: this project (~${codeFiles.toLocaleString()} files indexed) is usually covered in ≈${callBudget} focused explore calls, and extra calls are never rejected or rate-limited.** If the response above does not fully cover your question, run another codegraph_explore on the uncovered symbols — it is cheaper and more complete than Read. Only stop exploring when the response actually covers the flow you asked about.`];
       } catch {
         // Stats unavailable — skip budget note
       }
