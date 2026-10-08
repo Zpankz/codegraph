@@ -60,9 +60,9 @@ export const CONFIG_LEAF_LANGUAGES: ReadonlySet<string> = new Set(['yaml', 'prop
 export const DOCUMENTATION_LANGUAGES: ReadonlySet<string> = new Set(['markdown']);
 
 /** Indexed files that are code: `fileCount` minus documentation files. */
-export function codeFileCount(stats: { fileCount: number; filesByLanguage: Partial<Record<string, number>> }): number {
+export function codeFileCount(stats: { fileCount: number; filesByLanguage?: Partial<Record<string, number>> }): number {
   let docs = 0;
-  for (const language of DOCUMENTATION_LANGUAGES) docs += stats.filesByLanguage[language] ?? 0;
+  for (const language of DOCUMENTATION_LANGUAGES) docs += stats.filesByLanguage?.[language] ?? 0;
   return Math.max(0, stats.fileCount - docs);
 }
 
