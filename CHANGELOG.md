@@ -12,6 +12,10 @@ and adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### New Features
+
+- CodeGraph now indexes Markdown and MDX (`.md`, `.mdx`, `.markdown`): each heading becomes a searchable section, and the code a document names — in backticks, in plain prose like `ToolHandler.execute`, in example code blocks, or through links to source files, `#L` lines and other documents' headings — is linked to its definition, so `codegraph_explore` and callers can show where code is documented. A name that could mean more than one definition is left unlinked, and documentation never counts toward explore budgets, outranks source, or keeps unused code off the dead-code list. Re-index to pick up your docs.
+
 ### Fixes
 
 - In VB.NET, every member of a `Structure` is now indexed, including its fields, properties, methods, constructors and nested enums. Before, only the first member was, so the rest could not be found and their callers looked empty.
