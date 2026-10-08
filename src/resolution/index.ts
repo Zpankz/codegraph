@@ -33,6 +33,7 @@ import { gateDartLocal, clearDartLocalScopeMemos } from './dart-local-scope';
 import { clearCppTypeAliasMemos } from './cpp-type-aliases';
 import { clearCppIncluderMemos } from './cpp-includers';
 import { matchShopifyThemeFile } from './shopify-themes';
+import { matchMarkdownReference } from './markdown-references';
 import { resolveViaImport, resolvePhpImportedStaticCall, resolvePhpQualifiedClassRef, resolveJvmImport, extractImportMappings, extractReExports, loadCppIncludeDirs, isPhpIncludePathRef, isCobolCopybookRef, isNixPathImportRef, isDartImportRef, isLuaRequireRef, isJsPathImportRef, isBoundToOutOfRepoImport, importBindingTail, clearImportResolverMemos, resolveImportPath, isExternalImport } from './import-resolver';
 import { ResolverPool, minRefsForPool, shouldEngageAdaptively } from './resolver-pool';
 import { resolveAliasBinding } from './alias-binding';
@@ -1252,6 +1253,11 @@ export class ReferenceResolver {
     // or nothing: Shopify never looks in another theme (see ./shopify-themes).
     const themeFile = matchShopifyThemeFile(ref, this.context);
     if (themeFile !== undefined) return themeFile;
+
+    // A Markdown document's link or code mention names one target or nothing;
+    // the code-scoping strategies below would only guess (see ./markdown-references).
+    const documented = matchMarkdownReference(ref, this.context);
+    if (documented !== undefined) return documented;
 
     // Skip built-in/external references
     if (this.isBuiltInOrExternal(ref)) {
