@@ -152,6 +152,14 @@ describe('Markdown extraction', () => {
     expect(byName('Guide').docstring).toBe('CodeGraph indexes code. The ReferenceResolver links names.');
   });
 
+  it('reads a rule after a list as a break, and a quoted heading as neither', () => {
+    const tricky = extractFromSource('x.md', [
+      '# Top', '', '- item', '  continued', '-----', '', '> # Quoted', '> quoted text', '', 'Plain', '---',
+    ].join('\n'));
+    expect(tricky.nodes.map((n) => n.name)).toEqual(['x.md', 'Top', 'Plain']);
+    expect(tricky.nodes.find((n) => n.name === 'Top')!.docstring).toBe('item continued quoted text');
+  });
+
   it('declares defined terms, but not remarks', () => {
     expect(byName('Explore budget')).toMatchObject({
       kind: 'constant',
@@ -202,6 +210,8 @@ describe('Markdown through the pipeline', () => {
       '}',
       '',
       'export function runResolution(): void {',
+      '  function innerStep(): void {}',
+      '  innerStep();',
       '  new ReferenceResolver().resolveOne("x");',
       '}',
     ].join('\n'),
@@ -217,7 +227,7 @@ describe('Markdown through the pipeline', () => {
       '# Project',
       '',
       'Start at `ReferenceResolver.resolveOne`, or read the [guide](docs/guide.md#resolution).',
-      'The `forgottenHelper` is described here but never called.',
+      'The `forgottenHelper` is described here but never called; `innerStep` is a local.',
       'Calling `render()` is ambiguous, so it links nowhere, and the word `protocol` is just a word.',
       '',
       '## ReferenceResolver',
@@ -230,6 +240,10 @@ describe('Markdown through the pipeline', () => {
       '## Resolution',
       '',
       'runResolution() drives it; see [the class](../src/resolver.ts#L2) and [home](../README.md).',
+      '',
+      '## Deployment checklist',
+      '',
+      'Tag the release, then publish.',
     ].join('\n'),
   };
 
@@ -266,6 +280,7 @@ describe('Markdown through the pipeline', () => {
     expect(targets).toContain('src/helpers.ts:forgottenHelper');
     expect(targets.some((t) => t.endsWith(':render'))).toBe(false);
     expect(targets.some((t) => t.endsWith(':protocol'))).toBe(false);
+    expect(targets.some((t) => t.endsWith(':innerStep'))).toBe(false);
   });
 
   it('resolves prose calls, line links and links back to a document', () => {
@@ -284,6 +299,28 @@ describe('Markdown through the pipeline', () => {
   it('does not answer explore from documentation prose alone', async () => {
     const result = await new ToolHandler(cg).execute('codegraph_explore', { query: 'ambiguous nowhere described' });
     expect(result.content[0]!.text).toMatch(/^No relevant code found/);
+  });
+
+  it('answers explore with a section the query names by title', async () => {
+    const result = await new ToolHandler(cg).execute('codegraph_explore', { query: 'Deployment checklist' });
+    expect(result.content[0]!.text).toContain('docs/guide.md');
+  });
+
+  it('lists documentation as documentation, not as callers or tests', async () => {
+    const handler = new ToolHandler(cg);
+    const explore = (await handler.execute('codegraph_explore', { query: 'ReferenceResolver resolveOne' })).content[0]!.text;
+    const entry = explore.split('\n').find((l) => l.startsWith('- `resolveOne` (src/resolver.ts:2)'))!;
+    expect(entry).toContain('— 1 caller in `src/resolver.ts`');
+    expect(entry).toMatch(/; documented in (`README\.md`, `docs\/guide\.md`|`docs\/guide\.md`, `README\.md`)$/);
+    expect(explore).not.toMatch(/tests: .*\.md/);
+
+    const node = (await handler.execute('codegraph_node', { symbol: 'resolveOne' })).content[0]!.text;
+    expect(node).toMatch(/\*\*Called by ←\*\* runResolution \(src\/resolver\.ts:7\)\n/);
+    expect(node).toMatch(/\*\*Documented in ←\*\* .*README\.md:1/);
+
+    const section = (await handler.execute('codegraph_node', { symbol: 'Resolution' })).content[0]!.text;
+    expect(section).toContain('**Describes →**');
+    expect(section).toContain('**Linked from ←** Project (README.md:1)');
   });
 
   it('does not let documentation keep dead code alive', () => {

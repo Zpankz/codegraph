@@ -436,8 +436,28 @@ const DEFAULT_RELEVANCE_KIND_WEIGHT = 0.5;
  * Prose describes the code an architecture question is about, so it can carry
  * a file when nothing in source matches, but it never outweighs source that
  * does: a heading titled with the question's words is not where the answer is.
+ * The exception is a section the query NAMES — see `queryNamesSection`.
  */
 const DOCUMENTATION_RELEVANCE_WEIGHT = 0.2;
+
+/**
+ * Whether the query spells out a documentation section's whole title
+ * ("Module layout" for `### Module layout`) — the one case where prose IS the
+ * precise answer, since the agent asked for that section by name. Headings
+ * share words with every question, so this asks for every word, in any order.
+ */
+function queryNamesSection(section: Node, queryWords: ReadonlySet<string>): boolean {
+  if (!DOCUMENTATION_LANGUAGES.has(section.language)) return false;
+  const words = section.name.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
+  // A one-word title ("Overview", "Tests") is a word every question may use,
+  // not a name.
+  return words.length >= 2 && words.every((w) => queryWords.has(w));
+}
+
+/** The words of an explore query, as `queryNamesSection` compares them. */
+function queryWordSet(query: string): ReadonlySet<string> {
+  return new Set(query.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []);
+}
 
 /**
  * The "member of a type" tier of the table above, named so the one kind that
@@ -3919,12 +3939,18 @@ export class ToolHandler {
       let callers: Array<{ node: Node }> = [];
       try { callers = cg.getCallers(root.id) as Array<{ node: Node }>; } catch { /* skip this root */ }
 
+      // A document that names the symbol is not a caller and never a test, but
+      // it goes stale with the edit, so it is listed as what it is.
       const seen = new Set<string>();
       const uniq: Node[] = [];
+      const docFiles = new Set<string>();
       for (const c of callers) {
-        if (c?.node && !seen.has(c.node.id)) { seen.add(c.node.id); uniq.push(c.node); }
+        if (!c?.node || seen.has(c.node.id)) continue;
+        seen.add(c.node.id);
+        if (DOCUMENTATION_LANGUAGES.has(c.node.language)) docFiles.add(rel(c.node.filePath));
+        else uniq.push(c.node);
       }
-      if (uniq.length === 0) continue; // no blast radius → nothing to flag
+      if (uniq.length === 0 && docFiles.size === 0) continue; // no blast radius → nothing to flag
 
       const callerFiles = [...new Set(uniq.map((n) => rel(n.filePath)))];
       const testFiles = callerFiles.filter((f) => isTestFile(f));
@@ -3933,12 +3959,17 @@ export class ToolHandler {
       const shown = nonTest.slice(0, FILE_CAP).map((f) => `\`${f}\``).join(', ');
       const more = nonTest.length > FILE_CAP ? ` +${nonTest.length - FILE_CAP} more` : '';
       const where = nonTest.length > 0 ? ` in ${shown}${more}` : '';
-      const tests = testFiles.length > 0
-        ? `; tests: ${testFiles.slice(0, FILE_CAP).map((f) => `\`${f}\``).join(', ')}${testFiles.length > FILE_CAP ? ` +${testFiles.length - FILE_CAP}` : ''}`
-        : this.indirectTestNote(cg, uniq, rel);
+      const tests = uniq.length === 0 ? ''
+        : testFiles.length > 0
+          ? `; tests: ${testFiles.slice(0, FILE_CAP).map((f) => `\`${f}\``).join(', ')}${testFiles.length > FILE_CAP ? ` +${testFiles.length - FILE_CAP}` : ''}`
+          : this.indirectTestNote(cg, uniq, rel);
+      const docs = [...docFiles];
+      const documented = docs.length > 0
+        ? `; documented in ${docs.slice(0, FILE_CAP).map((f) => `\`${f}\``).join(', ')}${docs.length > FILE_CAP ? ` +${docs.length - FILE_CAP}` : ''}`
+        : '';
 
       entries.push(
-        `- \`${root.name}\` (${rel(root.filePath)}:${root.startLine}) — ${uniq.length} caller${uniq.length === 1 ? '' : 's'}${where}${tests}`,
+        `- \`${root.name}\` (${rel(root.filePath)}:${root.startLine}) — ${uniq.length} caller${uniq.length === 1 ? '' : 's'}${where}${tests}${documented}`,
       );
     }
     if (entries.length === 0) return '';
@@ -4016,6 +4047,7 @@ export class ToolHandler {
           const n = c?.node;
           if (!n || visited.has(n.id)) continue;
           visited.add(n.id);
+          if (DOCUMENTATION_LANGUAGES.has(n.language)) continue; // a doc is never a test
           const f = rel(n.filePath);
           if (isTestFile(f)) found.add(f);
           else next.push(n);
@@ -4270,11 +4302,12 @@ export class ToolHandler {
 
     // Prose matches common English words, so documentation hits alone must not
     // seed an answer: traversing their links would pull in code that no query
-    // word named.
-    const onlyDocumentationRoots = subgraph.roots.length > 0 && subgraph.roots.every((id) => {
-      const root = subgraph.nodes.get(id);
-      return !!root && DOCUMENTATION_LANGUAGES.has(root.language);
-    });
+    // word named. A section the query asked for by title is the answer, though.
+    const queryWords = queryWordSet(matchQuery);
+    const docRoots = subgraph.roots.map((id) => subgraph.nodes.get(id)).filter((n): n is Node => !!n);
+    const onlyDocumentationRoots = docRoots.length > 0
+      && docRoots.every((root) => DOCUMENTATION_LANGUAGES.has(root.language))
+      && !docRoots.some((root) => queryNamesSection(root, queryWords));
     if (onlyDocumentationRoots) {
       subgraph.nodes.clear();
       subgraph.edges.length = 0;
@@ -4304,6 +4337,21 @@ export class ToolHandler {
     // spends the file on the named method's neighbours instead is the one it
     // Reads the file to get past.
     const exactNodeIds = new Set<string>();
+    // A section the query names by title is one, and its document ranks with
+    // the files of named symbols: text rank puts a two-word heading below a
+    // property that is literally named `module`, and the per-token symbol
+    // seeding below cannot see a multi-word name at all.
+    const namedSectionIds = new Set<string>();
+    const namedSectionFiles = new Set<string>();
+    for (const { node } of cg.searchNodes(matchQuery, { limit: 20 })) {
+      if (!queryNamesSection(node, queryWords)) continue;
+      exactNodeIds.add(node.id);
+      namedSectionIds.add(node.id);
+      namedSectionFiles.add(node.filePath);
+      if (subgraph.nodes.has(node.id)) continue;
+      subgraph.nodes.set(node.id, node);
+      subgraph.roots.push(node.id);
+    }
     // A multi-line anchor (`lines 900-1003`, `foo.ts:12-40`) names a SPAN, not
     // a symbol — often the tail of a body a previous response windowed — and
     // is rendered as exactly that span. A single-line anchor with no enclosing
@@ -4440,7 +4488,7 @@ export class ToolHandler {
       return owned;
     };
 
-    const namedSeedIds = new Set<string>();
+    const namedSeedIds = new Set<string>(namedSectionIds);
     // The subset of named seeds that earns the named-FIRST sort tier. We still
     // SEED every ≤3-def name (so RWR / flow ranking is unchanged), but only the
     // most-substantive def is tiered — a bare name's unrelated namesakes (Go's
@@ -4700,7 +4748,11 @@ export class ToolHandler {
      * declares it.
      */
     const relevanceWeight = (node: Node, probeIsolation: boolean): number => {
-      if (DOCUMENTATION_LANGUAGES.has(node.language)) return DOCUMENTATION_RELEVANCE_WEIGHT;
+      if (DOCUMENTATION_LANGUAGES.has(node.language)) {
+        return queryNamesSection(node, queryWords)
+          ? RELEVANCE_KIND_WEIGHT[node.kind] ?? DEFAULT_RELEVANCE_KIND_WEIGHT
+          : DOCUMENTATION_RELEVANCE_WEIGHT;
+      }
       const signatureOnly = isInterfaceOwnedMethod(node);
       const weight = signatureOnly
         ? TYPE_MEMBER_RELEVANCE_WEIGHT
@@ -5071,7 +5123,7 @@ export class ToolHandler {
     // connectivity abstract base (`Request.swift`) and the same-named overloads
     // in other files (`Validation.swift`), falls outside the budget, and the
     // agent Reads it. The named file is the answer — rank it at the top.
-    const namedSeedFiles = new Set<string>();
+    const namedSeedFiles = new Set<string>(namedSectionFiles);
     for (const id of tierSeedIds) {
       const n = subgraph.nodes.get(id);
       if (n) namedSeedFiles.add(n.filePath);
@@ -8077,15 +8129,21 @@ export class ToolHandler {
       return out;
     };
     const callees = collect(cg.getCallees(node.id));
-    const callers = collect(cg.getCallers(node.id));
-    if (callees.length === 0 && callers.length === 0) return '';
+    const incoming = collect(cg.getCallers(node.id));
+    // A document's links are not calls, and a document linking here is not a
+    // caller — the labels say which is which so the trail stays honest.
+    const isDoc = DOCUMENTATION_LANGUAGES.has(node.language);
+    const callers = isDoc ? [] : incoming.filter((e) => !DOCUMENTATION_LANGUAGES.has(e.node.language));
+    const documents = isDoc ? incoming : incoming.filter((e) => DOCUMENTATION_LANGUAGES.has(e.node.language));
+    if (callees.length === 0 && incoming.length === 0) return '';
     const lines: string[] = ['', '**Trail — codegraph_node any of these to follow it (no Read needed)**'];
-    if (callees.length > 0) {
-      lines.push(`**Calls →** ${callees.slice(0, TRAIL_CAP).map(fmt).join(', ')}${callees.length > TRAIL_CAP ? `, +${callees.length - TRAIL_CAP} more` : ''}`);
-    }
-    if (callers.length > 0) {
-      lines.push(`**Called by ←** ${callers.slice(0, TRAIL_CAP).map(fmt).join(', ')}${callers.length > TRAIL_CAP ? `, +${callers.length - TRAIL_CAP} more` : ''}`);
-    }
+    const row = (label: string, entries: Array<{ node: Node; edge: Edge }>) => {
+      if (entries.length === 0) return;
+      lines.push(`**${label}** ${entries.slice(0, TRAIL_CAP).map(fmt).join(', ')}${entries.length > TRAIL_CAP ? `, +${entries.length - TRAIL_CAP} more` : ''}`);
+    };
+    row(isDoc ? 'Describes →' : 'Calls →', callees);
+    row('Called by ←', callers);
+    row(isDoc ? 'Linked from ←' : 'Documented in ←', documents);
     return lines.join('\n');
   }
 
