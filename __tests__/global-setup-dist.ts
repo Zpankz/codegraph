@@ -86,6 +86,42 @@ export function ensureTestDist(root: string, runBuild: BuildRunner = build): voi
   }
 }
 
-export default function setup(): void {
+/**
+ * Whether this Node's built-in SQLite has FTS5. The engine runs without it
+ * (#1532, LIKE-only search), but the suites that pin search ranking do not, and
+ * on such a Node they fail by the dozen with nothing pointing at the cause.
+ */
+export function hasFts5(): boolean {
+  try {
+    // Required lazily, as the engine's adapter does: a Node without the module
+    // must reach the warning, not fail loading this file.
+    const { DatabaseSync } = require('node:sqlite') as typeof import('node:sqlite');
+    const db = new DatabaseSync(':memory:');
+    try {
+      db.exec('CREATE VIRTUAL TABLE probe USING fts5(text)');
+      return true;
+    } finally {
+      db.close();
+    }
+  } catch {
+    return false;
+  }
+}
+
+const NO_FTS5_WARNING = `
+[test setup] WARNING: this Node (${process.version}, ${process.execPath}) has no SQLite FTS5.
+             Search-ranking tests will fail for that reason alone. Run the suite on a Node
+             whose node:sqlite includes FTS5 (the bundled release runtime always does).
+`;
+
+export default function setup(): (() => void) | void {
   ensureTestDist(ROOT);
+  // Both workspace projects run this setup in one process; warn once.
+  const warned = Symbol.for('codegraph.test.noFts5Warned');
+  const shared = globalThis as Record<symbol, unknown>;
+  if (shared[warned] || hasFts5()) return;
+  shared[warned] = true;
+  process.stderr.write(NO_FTS5_WARNING);
+  // Again after the run, beside the failure summary it explains.
+  return () => { process.stderr.write(NO_FTS5_WARNING); };
 }
