@@ -180,7 +180,7 @@ export class MarkdownExtractor {
       }
 
       const next = lines[i + 1];
-      if (next !== undefined && SETEXT_UNDERLINE.test(next) && this.isParagraphLine(line)) {
+      if (next !== undefined && SETEXT_UNDERLINE.test(next) && this.inPlainParagraph(i)) {
         const level = next.trim().startsWith('=') ? 1 : 2;
         this.openHeading(level, line.trim(), lineNo, line);
         i++;
@@ -206,6 +206,18 @@ export class MarkdownExtractor {
     const last = this.lastContentLine(lines.length);
     while (this.stack.length > 0) this.closeSection(last);
     this.fileNode.docstring = summarize(this.filePreamble.join(' ')) || undefined;
+  }
+
+  /**
+   * Whether the paragraph that line `index` ends is plain prose — the only
+   * thing a setext underline turns into a heading. A `---` under a list item's
+   * lazy continuation line is a thematic break closing the list.
+   */
+  private inPlainParagraph(index: number): boolean {
+    for (let j = index; j >= 0 && this.lines[j]!.trim(); j--) {
+      if (!this.isParagraphLine(this.lines[j]!)) return false;
+    }
+    return true;
   }
 
   private isParagraphLine(line: string): boolean {
@@ -288,7 +300,10 @@ export class MarkdownExtractor {
 
   private recordProse(line: string): void {
     if (/^\s*\|?\s*:?-{3,}/.test(line) || THEMATIC_BREAK.test(line)) return;
-    const text = stripInlineMarkdown(line.replace(LIST_OR_QUOTE_PREFIX, ''));
+    const unprefixed = line.replace(LIST_OR_QUOTE_PREFIX, '');
+    // A quoted heading is a title inside the quote, not a sentence of this section.
+    if (ATX_HEADING.test(unprefixed)) return;
+    const text = stripInlineMarkdown(unprefixed);
     if (!text) return;
     const target = this.stack[this.stack.length - 1]?.prose ?? this.filePreamble;
     if (target.join(' ').length < 1200) target.push(text);
