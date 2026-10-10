@@ -179,11 +179,12 @@ export class MarkdownExtractor {
         continue;
       }
 
-      const next = lines[i + 1];
-      if (next !== undefined && SETEXT_UNDERLINE.test(next) && this.inPlainParagraph(i)) {
-        const level = next.trim().startsWith('=') ? 1 : 2;
-        this.openHeading(level, line.trim(), lineNo, line);
-        i++;
+      const underline = this.setextUnderlineOf(i);
+      if (underline > i) {
+        const level = lines[underline]!.trim().startsWith('=') ? 1 : 2;
+        const text = lines.slice(i, underline).map((l) => l.trim()).join(' ');
+        this.openHeading(level, text, lineNo, lines[underline - 1]!);
+        i = underline;
         continue;
       }
 
@@ -209,15 +210,21 @@ export class MarkdownExtractor {
   }
 
   /**
-   * Whether the paragraph that line `index` ends is plain prose — the only
-   * thing a setext underline turns into a heading. A `---` under a list item's
-   * lazy continuation line is a thematic break closing the list.
+   * When a plain paragraph STARTS at line `index` and ends in a setext
+   * underline, the underline's index — the whole paragraph is the heading, as
+   * CommonMark reads it. Otherwise -1. A line after a list item is that item's
+   * lazy continuation, not a paragraph start, so a `---` under it stays a
+   * thematic break closing the list.
    */
-  private inPlainParagraph(index: number): boolean {
-    for (let j = index; j >= 0 && this.lines[j]!.trim(); j--) {
-      if (!this.isParagraphLine(this.lines[j]!)) return false;
-    }
-    return true;
+  private setextUnderlineOf(index: number): number {
+    const prev = this.lines[index - 1];
+    const startsBlock = prev === undefined || !prev.trim() || ATX_HEADING.test(prev)
+      || THEMATIC_BREAK.test(prev) || SETEXT_UNDERLINE.test(prev) || FENCE_OPEN.test(prev);
+    if (!startsBlock) return -1;
+    let j = index;
+    while (j < this.lines.length && !SETEXT_UNDERLINE.test(this.lines[j]!)
+      && !FENCE_OPEN.test(this.lines[j]!) && this.isParagraphLine(this.lines[j]!)) j++;
+    return j > index && j < this.lines.length && SETEXT_UNDERLINE.test(this.lines[j]!) ? j : -1;
   }
 
   private isParagraphLine(line: string): boolean {

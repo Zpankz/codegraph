@@ -160,6 +160,14 @@ describe('Markdown extraction', () => {
     expect(tricky.nodes.find((n) => n.name === 'Top')!.docstring).toBe('item continued quoted text');
   });
 
+  it('reads a setext heading as its whole paragraph', () => {
+    const doc = extractFromSource('y.md', ['# Top', '', 'Intro.', '', 'A heading that', 'wraps a line', '===', '', 'Body.'].join('\n'));
+    const heading = doc.nodes.find((n) => n.name === 'A heading that wraps a line')!;
+    expect(heading).toMatchObject({ qualifiedName: 'y.md#a-heading-that-wraps-a-line', signature: '# A heading that wraps a line', startLine: 5 });
+    expect(heading.docstring).toBe('Body.');
+    expect(doc.nodes.find((n) => n.name === 'Top')!.docstring).toBe('Intro.');
+  });
+
   it('declares defined terms, but not remarks', () => {
     expect(byName('Explore budget')).toMatchObject({
       kind: 'constant',
