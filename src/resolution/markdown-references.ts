@@ -125,6 +125,24 @@ function innermostAt(nodes: Node[], line: number): Node | undefined {
   return best;
 }
 
+const CALLABLE_KINDS = new Set<Node['kind']>(['function', 'method']);
+
+/**
+ * Whether a symbol lives inside a function body — `ctx.filePath` declared in
+ * `makeExtractorContext`. Prose names what a file exports, a type, or a
+ * member; a local sharing that name is the one definition only by accident.
+ * Read off the qualified name: an enclosing segment that is a callable in the
+ * same file.
+ */
+function isLocalToCallable(node: Node, context: ResolutionContext): boolean {
+  const scopes = node.qualifiedName.split('::').slice(0, -1);
+  return scopes.some((scope) => {
+    const named = context.getNodesInFileNamed?.(node.filePath, scope)
+      ?? context.getNodesInFile(node.filePath).filter((n) => n.name === scope);
+    return named.some((n) => CALLABLE_KINDS.has(n.kind));
+  });
+}
+
 /**
  * A code entity named in prose. `Type::member` must match the end of a
  * qualified name (or, for `module::fn`, a file named after the module); a bare
@@ -138,7 +156,9 @@ function matchSymbol(ref: UnresolvedRef, context: ResolutionContext): ResolvedRe
 
   let candidates = context
     .getNodesByName(tail)
-    .filter((n) => (n.language as string) !== 'markdown' && (PRIMARY_KINDS.has(n.kind) || MEMBER_KINDS.has(n.kind)));
+    .filter((n) => (n.language as string) !== 'markdown'
+      && (PRIMARY_KINDS.has(n.kind) || MEMBER_KINDS.has(n.kind))
+      && !isLocalToCallable(n, context));
   if (candidates.length === 0) return null;
 
   let qualified = segments.length > 1;
