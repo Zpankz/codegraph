@@ -473,7 +473,11 @@ export class MarkdownExtractor {
     this.emitReference(this.fileNode.id, /[./]/.test(resolved) ? resolved : `./${resolved}`, 'imports', lineNo, Math.max(0, column));
   }
 
-  private emitReference(fromNodeId: string, referenceName: string, referenceKind: ReferenceKind, line: number, column: number): void {
+  private emitReference(fromNodeId: string, name: string, referenceKind: ReferenceKind, line: number, column: number): void {
+    // A path at the root (`later.md#setup`, `tools.ts`) is written `./` so a
+    // failed one is parked under its file name, which a sync that adds the
+    // file retries — not under its extension, as a dotted symbol would be.
+    const referenceName = referenceKind === 'references' && /[.#]/.test(name) && !name.includes('/') ? `./${name}` : name;
     const key = `${fromNodeId}\0${referenceKind}\0${referenceName}`;
     if (this.emitted.has(key)) return;
     this.emitted.add(key);

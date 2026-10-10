@@ -3161,11 +3161,18 @@ export class ExtractionOrchestrator {
     validNodes: readonly NodeIdentity[]
   ): void {
     const replacementOf = pairReindexedNodes(priorNodes, validNodes);
+    const priorFileIds = new Set(priorNodes.filter((n) => n.kind === 'file').map((n) => n.id));
     const reinserted: Edge[] = [];
     const resurrected: UnresolvedReference[] = [];
     for (const e of crossFileIncomingEdges) {
       const newTargetId = replacementOf.get(e.target);
-      if (newTargetId) {
+      // A reference to a place in the file (Markdown's `guide.md#faq`,
+      // `a.ts#L12`) that landed on the file itself found no such place; the
+      // edit may have added the heading or moved a symbol onto the line, so
+      // resolve it again.
+      const fellBackToFile = priorFileIds.has(e.target)
+        && typeof e.metadata?.refName === 'string' && e.metadata.refName.includes('#');
+      if (newTargetId && !fellBackToFile) {
         reinserted.push({ source: e.source, target: newTargetId, kind: e.kind, metadata: e.metadata, line: e.line, column: e.column, provenance: e.provenance });
       } else {
         const ref = resurrectRefFromDroppedEdge(e);

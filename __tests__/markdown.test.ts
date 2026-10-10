@@ -185,7 +185,7 @@ describe('Markdown extraction', () => {
     expect(refs).toContain('ReferenceResolver');
     expect(refs).toContain('src/mcp/tools.ts#L12');
     expect(refs).toContain('docs/index.md#setup');
-    expect(refs).toContain('Other Page.md#some-heading');
+    expect(refs).toContain('./Other Page.md#some-heading');
     expect(refs).toContain('docs/more.md');
     expect(refs).toContain('Graph');
     expect(refs.some((r) => r.includes('example.com'))).toBe(false);
@@ -342,4 +342,45 @@ describe('Markdown through the pipeline', () => {
     const report = buildDeadCodeReport(cg);
     expect(report.entries.map((e) => e.node.name)).toContain('forgottenHelper');
   });
+});
+
+describe('Markdown links to targets that appear later', () => {
+  let root: string;
+  let cg: CodeGraph;
+
+  afterAll(() => {
+    cg?.close();
+    if (root) fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it('resolves on the sync that adds the linked file, section or symbol', async () => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-markdown-late-'));
+    fs.mkdirSync(path.join(root, 'src'));
+    fs.writeFileSync(path.join(root, 'src/app.ts'), 'export function main(): void {}\n');
+    fs.writeFileSync(path.join(root, 'README.md'), [
+      '# Project',
+      '',
+      'See [setup](./later.md#setup), [the module](src/late.ts) and `LateWidget.build()`.',
+      'Questions go to [the FAQ](later.md#faq).',
+    ].join('\n'));
+    cg = await CodeGraph.init(root, { index: true });
+    const project = () => cg.getNodesByName('Project').find((n) => n.filePath === 'README.md')!;
+    const targets = () => cg.getOutgoingEdges(project().id)
+      .filter((e) => e.kind === 'references')
+      .map((e) => cg.getNode(e.target)!)
+      .map((n) => `${n.filePath}:${n.name}`);
+    expect(targets()).toEqual([]);
+
+    fs.writeFileSync(path.join(root, 'later.md'), '# Later\n\n## Setup\n\nRun it.\n');
+    fs.writeFileSync(path.join(root, 'src/late.ts'), 'export class LateWidget {\n  build(): void {}\n}\n');
+    await cg.sync();
+
+    expect(targets()).toEqual(expect.arrayContaining(['later.md:Setup', 'src/late.ts:late.ts', 'src/late.ts:build']));
+    // Until the section exists, the link lands on the document itself.
+    expect(targets()).toContain('later.md:later.md');
+
+    fs.appendFileSync(path.join(root, 'later.md'), '\n## FAQ\n\nAsk.\n');
+    await cg.sync();
+    expect(targets()).toContain('later.md:FAQ');
+  }, 60_000);
 });

@@ -366,6 +366,13 @@ describe('referenceNameTail', () => {
     expect(referenceNameTail('import:./home.component#HomeComponent', 'imports')).toBe('home');
     expect(referenceNameTail('lazy-import:./pages/Team', 'type_of')).toBe('/pages/Team');
   });
+
+  it('parks a link into a file under the file name', () => {
+    expect(referenceNameTail('docs/guide.md#setup', 'references')).toBe('guide.md');
+    expect(referenceNameTail('./later.md#setup', 'references')).toBe('later.md');
+    expect(referenceNameTail('src/a.ts#L12', 'references')).toBe('a.ts');
+    expect(referenceNameTail('Foo#bar', 'references')).toBe('Foo#bar');
+  });
 });
 
 describe('moduleReferenceKeys', () => {

@@ -49,8 +49,10 @@ export function referenceNameTail(referenceName: string, referenceKind?: string)
     if (tail) return tail;
   }
   if (referenceKind === 'references') {
-    const fileName = referenceName.slice(referenceName.lastIndexOf('/') + 1);
-    if (fileName !== referenceName && FILE_NAME.test(fileName)) return fileName;
+    // A Markdown link may point into the file: `docs/guide.md#setup`, `src/a.ts#L12`.
+    const filePath = referenceName.replace(/#[^/]*$/, '');
+    const fileName = filePath.slice(filePath.lastIndexOf('/') + 1);
+    if (fileName !== filePath && FILE_NAME.test(fileName)) return fileName;
   }
   // Erlang refs carry a written arity (`f/1`, `mod::fn/2` — #1610); the tail a
   // new symbol's plain name could match is the arity-less function name.
