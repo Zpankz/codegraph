@@ -14,7 +14,7 @@ and adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### New Features
 
-- CodeGraph now indexes Markdown and MDX (`.md`, `.mdx`, `.markdown`): each heading becomes a searchable section, and the code a document names — in backticks, in plain prose like `ToolHandler.execute`, in example code blocks, or through links to source files, `#L` lines and other documents' headings — is linked to its definition, so `codegraph_explore` and callers can show where code is documented. A name that could mean more than one definition is left unlinked, and documentation never counts toward explore budgets, outranks source, or keeps unused code off the dead-code list. Re-index to pick up your docs.
+- CodeGraph now indexes Markdown and MDX (`.md`, `.mdx`, `.markdown`): each heading becomes a searchable section, and the code a document names — in backticks, in plain prose like `ToolHandler.execute`, in example code blocks, or through links to source files, `#L` lines and other documents' headings — is linked to its definition. `codegraph_explore`'s blast radius and `codegraph_node`'s trail list the documents that describe a symbol ("documented in"), separately from its callers and tests, and asking `codegraph_explore` for a section by its title returns that section in full. A name that could mean more than one definition — or that only matches a local inside some function — is left unlinked, and documentation never counts toward explore budgets, outranks source, or keeps unused code off the dead-code list. Re-index to pick up your docs.
 
 ### Fixes
 
