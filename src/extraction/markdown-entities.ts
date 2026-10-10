@@ -129,6 +129,10 @@ export function classifyCodeSpan(raw: string): Omit<MarkdownEntity, 'column'> | 
   if (segments.length === 1) {
     const only = segments[0]!;
     if (NON_SYMBOL_WORDS.has(only) || only.length < 2 || /^\$?[A-Z]{1,3}$/.test(only)) return null;
+    // A bare lowercase word (`name`, `when`, `main`) is a field, a keyword or a
+    // branch far more often than the one function that shares it; written as
+    // a call (`render()`) it is a claim about code.
+    if (!call && /^[a-z]+$/.test(only)) return null;
   }
   return { type: 'symbol', name: segments.join('::') };
 }

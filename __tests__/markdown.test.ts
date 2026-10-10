@@ -62,6 +62,10 @@ describe('Markdown entity recognition', () => {
     expect(classifyCodeSpan('--force')).toBeNull();
     expect(classifyCodeSpan('{ "a": 1 }')).toBeNull();
     expect(classifyCodeSpan('https://example.com/x.ts')).toBeNull();
+    expect(classifyCodeSpan('name')).toBeNull();
+    expect(classifyCodeSpan('main')).toBeNull();
+    expect(classifyCodeSpan('render()')).toEqual({ type: 'symbol', name: 'render' });
+    expect(classifyCodeSpan('has_error')).toEqual({ type: 'symbol', name: 'has_error' });
   });
 
   it('finds code-shaped words in prose and leaves English alone', () => {
@@ -230,13 +234,14 @@ describe('Markdown through the pipeline', () => {
       '',
       'export function render(): void {}',
     ].join('\n'),
-    'src/other.ts': 'export function render(): void {}\nexport class Hello {\n  protocol = 1;\n}\n',
+    'src/other.ts': 'export function render(): void {}\nexport class Hello {\n  protocol = 1;\n  dispatch(): void {}\n  runJobs(): void {}\n}\n',
     'README.md': [
       '# Project',
       '',
       'Start at `ReferenceResolver.resolveOne`, or read the [guide](docs/guide.md#resolution).',
       'The `forgottenHelper` is described here but never called; `innerStep` is a local.',
       'Calling `render()` is ambiguous, so it links nowhere, and the word `protocol` is just a word.',
+      'An example calls `store.dispatch()`, then `pool.runJobs()`.',
       '',
       '## ReferenceResolver',
       '',
@@ -289,6 +294,8 @@ describe('Markdown through the pipeline', () => {
     expect(targets.some((t) => t.endsWith(':render'))).toBe(false);
     expect(targets.some((t) => t.endsWith(':protocol'))).toBe(false);
     expect(targets.some((t) => t.endsWith(':innerStep'))).toBe(false);
+    expect(targets).toContain('src/other.ts:runJobs');
+    expect(targets.some((t) => t.endsWith(':dispatch'))).toBe(false);
   });
 
   it('resolves prose calls, line links and links back to a document', () => {

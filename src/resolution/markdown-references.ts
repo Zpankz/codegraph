@@ -170,8 +170,10 @@ function matchSymbol(ref: UnresolvedRef, context: ResolutionContext): ResolvedRe
     if (byName.length > 0) candidates = byName;
     else if (byModule.length > 0) candidates = byModule;
     // `cg.searchNodes()` — a lowercase receiver is usually an instance, which
-    // names no type: only the member name says anything, so it must stand alone.
-    else if (segments.length === 2 && /^[a-z_$]/.test(segments[0]!)) qualified = false;
+    // names no type: only the member name says anything, so it must stand
+    // alone, and say enough — `store.dispatch()` in a Vuex example is not this
+    // project's one `dispatch`.
+    else if (segments.length === 2 && /^[a-z_$]/.test(segments[0]!) && !/^[a-z]+$/.test(tail)) qualified = false;
     else return null;
   }
 
