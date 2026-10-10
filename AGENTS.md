@@ -55,6 +55,8 @@ condition, and applied globally it hands the engine's suites the browser builds 
 ESM-only and the repo is CJS) is the shared base; note that a workspace project **concatenates**
 the base's `include` with its own, which is why the `ui` project does not `extends` it.
 
+Run the suite on a Node whose built-in `node:sqlite` has **FTS5** (the bundled release runtime always does; some Node 22 builds, e.g. 22.14, do not). The engine degrades to LIKE search without it (#1532), but the search-ranking suites fail by the dozen — global setup prints a warning naming the Node binary at the start and end of the run when FTS5 is missing.
+
 Node engines: `>=20.0.0 <25.0.0`. There is a hard exit on Node 25.x and below 20 (see `src/bin/node-version-check.ts`).
 
 ## Architecture
